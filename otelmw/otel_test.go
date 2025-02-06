@@ -82,3 +82,46 @@ func BenchmarkWithTracing(b *testing.B) {
 	assert.Equal(b, "BenchmarkWithTracing/traced-benchmark", benchSpan.Name())
 	assert.Equal(b, codes.Ok, benchSpan.Status().Code)
 }
+
+func TestTracingNesting(t *testing.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	tt := testctx.New(t)
+	tt.Use(otelmw.WithTracing[*testing.T](otelmw.Config{
+		TracerProvider: tracerProvider,
+	}))
+
+	tt.Run("parent", func(ctx context.Context, t *testctx.T) {
+		time.Sleep(10 * time.Millisecond)
+
+		t.Run("child", func(ctx context.Context, t *testctx.T) {
+			time.Sleep(10 * time.Millisecond)
+
+			t.Run("grandchild", func(ctx context.Context, t *testctx.T) {
+				time.Sleep(10 * time.Millisecond)
+			})
+		})
+	})
+
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 3)
+
+	// Spans should end in reverse order (grandchild, child, parent)
+	grandchild := spans[0]
+	child := spans[1]
+	parent := spans[2]
+
+	// Verify names
+	assert.Equal(t, "TestTracingNesting/parent/child/grandchild", grandchild.Name())
+	assert.Equal(t, "TestTracingNesting/parent/child", child.Name())
+	assert.Equal(t, "TestTracingNesting/parent", parent.Name())
+
+	// Verify span nesting
+	assert.Equal(t, child.SpanContext().SpanID(), grandchild.Parent().SpanID())
+	assert.Equal(t, parent.SpanContext().SpanID(), child.Parent().SpanID())
+
+	// Verify timing - each span should end after its children
+	assert.True(t, grandchild.EndTime().Before(child.EndTime()))
+	assert.True(t, child.EndTime().Before(parent.EndTime()))
+}
