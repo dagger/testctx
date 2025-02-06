@@ -27,10 +27,10 @@ type Middleware[T Runner[T]] func(RunFunc[T]) RunFunc[T]
 type RunFunc[T Runner[T]] func(context.Context, *W[T])
 
 // New creates a new context-aware test helper
-func New[T Runner[T]](t T) *W[T] {
+func New[T Runner[T]](ctx context.Context, t T) *W[T] {
 	return &W[T]{
 		tb:  t,
-		ctx: context.Background(),
+		ctx: ctx,
 	}
 }
 
@@ -117,3 +117,21 @@ type (
 	// BenchFunc is a benchmark function that takes a context and B
 	BenchFunc = RunFunc[*testing.B]
 )
+
+// BaseName returns the name of the test without the full path prefix
+func (w *W[T]) BaseName() string {
+	name := w.Name()
+	if idx := lastSlashIndex(name); idx >= 0 {
+		return name[idx+1:]
+	}
+	return name
+}
+
+func lastSlashIndex(s string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '/' {
+			return i
+		}
+	}
+	return -1
+}

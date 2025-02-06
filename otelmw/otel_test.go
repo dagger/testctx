@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/otelmw"
 	"github.com/stretchr/testify/assert"
@@ -15,11 +16,74 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
+func TestOTelParallelAttribution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+
+	ctx := telemetry.InitEmbedded(context.Background(), nil)
+	t.Cleanup(telemetry.Close)
+
+	tt := testctx.New(ctx, t)
+	tt.Use(
+		testctx.WithParallel(),
+		otelmw.WithTracing[*testing.T](),
+	)
+
+	tt.Run("test", func(ctx context.Context, t *testctx.T) {
+		time.Sleep(time.Second)
+
+		t.Run("child", func(ctx context.Context, t *testctx.T) {
+			time.Sleep(time.Second)
+
+			t.Run("grandchild", func(ctx context.Context, t *testctx.T) {
+				time.Sleep(time.Second)
+			})
+		})
+	})
+
+	tt.Run("test 2", func(ctx context.Context, t *testctx.T) {
+		time.Sleep(time.Second)
+
+		t.Run("child", func(ctx context.Context, t *testctx.T) {
+			time.Sleep(time.Second)
+
+			t.Run("grandchild", func(ctx context.Context, t *testctx.T) {
+				time.Sleep(time.Second)
+			})
+		})
+	})
+
+	tt.Run("test 3", func(ctx context.Context, t *testctx.T) {
+		time.Sleep(time.Second)
+
+		t.Run("child", func(ctx context.Context, t *testctx.T) {
+			time.Sleep(time.Second)
+
+			t.Run("grandchild", func(ctx context.Context, t *testctx.T) {
+				time.Sleep(time.Second)
+			})
+		})
+	})
+
+	tt.Run("test 4", func(ctx context.Context, t *testctx.T) {
+		time.Sleep(time.Second)
+
+		t.Run("child", func(ctx context.Context, t *testctx.T) {
+			time.Sleep(time.Second)
+
+			t.Run("grandchild", func(ctx context.Context, t *testctx.T) {
+				time.Sleep(time.Second)
+			})
+		})
+	})
+}
+
 func TestWithTracing(t *testing.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t)
+	tt := testctx.New(context.Background(), t)
 	tt.Use(otelmw.WithTracing[*testing.T](otelmw.Config{
 		TracerProvider: tracerProvider,
 		Attributes: []attribute.KeyValue{
@@ -28,7 +92,7 @@ func TestWithTracing(t *testing.T) {
 	}))
 
 	tt.Run("passing-test", func(ctx context.Context, t *testctx.T) {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(time.Second)
 	})
 
 	tt.Run("failing-test", func(ctx context.Context, t *testctx.T) {
@@ -56,7 +120,7 @@ func BenchmarkWithTracing(b *testing.B) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	bb := testctx.New(b)
+	bb := testctx.New(context.Background(), b)
 	bb.Use(otelmw.WithTracing[*testing.B](otelmw.Config{
 		TracerProvider: tracerProvider,
 	}))
@@ -87,7 +151,7 @@ func TestTracingNesting(t *testing.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t)
+	tt := testctx.New(context.Background(), t)
 	tt.Use(otelmw.WithTracing[*testing.T](otelmw.Config{
 		TracerProvider: tracerProvider,
 	}))

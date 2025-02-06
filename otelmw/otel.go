@@ -18,6 +18,9 @@ type Config struct {
 	Attributes []attribute.KeyValue
 }
 
+// testSpanKey is the key used to store the test span in the context
+type testSpanKey struct{}
+
 // WithTracing creates middleware that adds OpenTelemetry tracing around each test/benchmark
 func WithTracing[T testctx.Runner[T]](cfg ...Config) testctx.Middleware[T] {
 	var c Config
@@ -33,16 +36,24 @@ func WithTracing[T testctx.Runner[T]](cfg ...Config) testctx.Middleware[T] {
 		trace.WithInstrumentationVersion("v0.1.0"),
 	)
 
-	return func(next testctx.TestFunc[T]) testctx.TestFunc[T] {
+	return func(next testctx.RunFunc[T]) testctx.RunFunc[T] {
 		return func(ctx context.Context, w *testctx.W[T]) {
-			testName := w.Name()
-
 			// Start a new span for this test/benchmark
 			opts := []trace.SpanStartOption{
 				trace.WithAttributes(c.Attributes...),
 			}
 
-			ctx, span := tracer.Start(ctx, testName, opts...)
+			// Link to the parent test span so that tools can attribute the subtest
+			// runtime to the parent test when tests are run in parallel
+			if val, ok := ctx.Value(testSpanKey{}).(trace.Span); ok {
+				opts = append(opts, trace.WithLinks(trace.Link{
+					SpanContext: val.SpanContext(),
+				}))
+			}
+
+			spanName := w.BaseName()
+
+			ctx, span := tracer.Start(ctx, spanName, opts...)
 			defer func() {
 				if w.Failed() {
 					span.SetStatus(codes.Error, "test failed")
@@ -51,6 +62,9 @@ func WithTracing[T testctx.Runner[T]](cfg ...Config) testctx.Middleware[T] {
 				}
 				span.End()
 			}()
+
+			// Store the span in the context so that it can be linked to in subtests
+			ctx = context.WithValue(ctx, testSpanKey{}, span)
 
 			next(ctx, w)
 		}
