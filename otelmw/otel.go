@@ -2,7 +2,6 @@ package otelmw
 
 import (
 	"context"
-	"testing"
 
 	"github.com/dagger/testctx"
 	"go.opentelemetry.io/otel"
@@ -19,8 +18,8 @@ type Config struct {
 	Attributes []attribute.KeyValue
 }
 
-// WithTracing creates middleware that adds OpenTelemetry tracing around each test
-func WithTracing(cfg ...Config) testctx.Middleware[testing.T] {
+// WithTracing creates middleware that adds OpenTelemetry tracing around each test/benchmark
+func WithTracing[T testctx.Runner[T]](cfg ...Config) testctx.Middleware[T] {
 	var c Config
 	if len(cfg) > 0 {
 		c = cfg[0]
@@ -34,27 +33,26 @@ func WithTracing(cfg ...Config) testctx.Middleware[testing.T] {
 		trace.WithInstrumentationVersion("v0.1.0"),
 	)
 
-	return func(next testctx.TestFunc[testing.T]) testctx.TestFunc[testing.T] {
-		return func(ctx context.Context, t *testing.T) {
-			// Start a new span for this test
+	return func(next testctx.TestFunc[T]) testctx.TestFunc[T] {
+		return func(ctx context.Context, w *testctx.W[T]) {
+			testName := w.Name()
+
+			// Start a new span for this test/benchmark
 			opts := []trace.SpanStartOption{
 				trace.WithAttributes(c.Attributes...),
-				trace.WithAttributes(
-					attribute.String("test.name", t.Name()),
-					attribute.String("test.package", t.Name()[:len(t.Name())-len("/"+t.Name())]),
-				),
 			}
 
-			ctx, span := tracer.Start(ctx, t.Name(), opts...)
+			ctx, span := tracer.Start(ctx, testName, opts...)
 			defer func() {
-				if t.Failed() {
+				if w.Failed() {
 					span.SetStatus(codes.Error, "test failed")
+				} else {
+					span.SetStatus(codes.Ok, "test passed")
 				}
 				span.End()
 			}()
 
-			// Run the test with the new context containing the span
-			next(ctx, t)
+			next(ctx, w)
 		}
 	}
 }

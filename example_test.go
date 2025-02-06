@@ -13,9 +13,9 @@ func TestExample(t *testing.T) {
 
 	// Add middleware
 	tt.Use(
-		testctx.WithTimeout(5*time.Second),
+		testctx.WithTimeout[*testing.T](5*time.Second),
 		testctx.WithParallel(),
-		testctx.WithInstrumentation(func(ctx context.Context, name string) {
+		testctx.WithInstrumentation[*testing.T](func(ctx context.Context, name string) {
 			// Add your instrumentation here
 		}),
 	)
