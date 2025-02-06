@@ -64,8 +64,12 @@ func (w *W[T]) Run(name string, fn TestFunc[T]) bool {
 			middleware: w.middleware,
 		}
 
-		wrapped := fn
-		// Apply middleware in reverse order
+		// First wrap the function to ensure context sync
+		wrapped := func(ctx context.Context, t *W[T]) {
+			fn(ctx, t.WithContext(ctx))
+		}
+
+		// Then apply middleware in reverse order
 		for i := len(w.middleware) - 1; i >= 0; i-- {
 			wrapped = w.middleware[i](wrapped)
 		}

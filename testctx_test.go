@@ -105,7 +105,7 @@ func TestContextPropagation(t *testing.T) {
 				count = v.(int)
 			}
 			ctx = context.WithValue(ctx, ctxKey{}, count+1)
-			next(ctx, t.WithContext(ctx))
+			next(ctx, t)
 		}
 	})
 
