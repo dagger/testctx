@@ -25,13 +25,3 @@ func WithParallel() Middleware {
 		}
 	}
 }
-
-// WithInstrumentation creates middleware that adds instrumentation
-func WithInstrumentation(instrument func(context.Context, string)) Middleware {
-	return func(next TestFunc) TestFunc {
-		return func(ctx context.Context, t *T) {
-			instrument(ctx, t.Name())
-			next(ctx, t)
-		}
-	}
-}
