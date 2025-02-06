@@ -21,7 +21,7 @@ func WithTimeout[T Runner[T]](d time.Duration) Middleware[T] {
 func WithParallel() Middleware[*testing.T] {
 	return func(next TestFunc) TestFunc {
 		return func(ctx context.Context, t *W[*testing.T]) {
-			t.tb.Parallel()
+			t.Unwrap().Parallel()
 			next(ctx, t)
 		}
 	}
