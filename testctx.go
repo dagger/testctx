@@ -16,10 +16,8 @@ type Runner[T testing.TB] interface {
 type W[T Runner[T]] struct {
 	tb         T
 	ctx        context.Context
-	cancel     context.CancelFunc
 	middleware []Middleware[T]
 	mu         sync.RWMutex
-	cleanup    []func()
 }
 
 // Middleware represents a function that can wrap a test function
@@ -30,21 +28,17 @@ type TestFunc[T Runner[T]] func(context.Context, *W[T])
 
 // New creates a new context-aware test helper
 func New[T Runner[T]](t T) *W[T] {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &W[T]{
-		tb:     t,
-		ctx:    ctx,
-		cancel: cancel,
+		tb:  t,
+		ctx: context.Background(),
 	}
 }
 
 // WithContext creates a new wrapper with the given context
 func (w *W[T]) WithContext(ctx context.Context) *W[T] {
-	ctx, cancel := context.WithCancel(ctx)
 	return &W[T]{
 		tb:         w.tb,
 		ctx:        ctx,
-		cancel:     cancel,
 		middleware: w.middleware,
 	}
 }
@@ -82,9 +76,6 @@ func (w *W[T]) Run(name string, fn TestFunc[T]) bool {
 
 // Cleanup registers a function to be called when the test completes
 func (w *W[T]) Cleanup(f func()) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.cleanup = append(w.cleanup, f)
 	w.tb.Cleanup(f)
 }
 
@@ -105,6 +96,11 @@ func (w *W[T]) SkipNow()                          { w.tb.SkipNow() }
 func (w *W[T]) Skipf(format string, args ...any)  { w.tb.Skipf(format, args...) }
 func (w *W[T]) Skipped() bool                     { return w.tb.Skipped() }
 func (w *W[T]) TempDir() string                   { return w.tb.TempDir() }
+
+// Unwrap returns the underlying test/benchmark type
+func (w *W[T]) Unwrap() T {
+	return w.tb
+}
 
 // Common type aliases for convenience
 type (

@@ -7,26 +7,78 @@ import (
 
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/otelmw"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestWithTracing(t *testing.T) {
-	tt := testctx.New(t)
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	// Add the tracing middleware with custom attributes
+	tt := testctx.New(t)
 	tt.Use(otelmw.WithTracing[*testing.T](otelmw.Config{
+		TracerProvider: tracerProvider,
 		Attributes: []attribute.KeyValue{
-			attribute.String("environment", "test"),
+			attribute.String("test.suite", "otel_test"),
 		},
 	}))
 
-	tt.Run("traced-test", func(ctx context.Context, t *testctx.T) {
-		// This test will automatically get a span
+	tt.Run("passing-test", func(ctx context.Context, t *testctx.T) {
 		time.Sleep(100 * time.Millisecond)
 	})
 
 	tt.Run("failing-test", func(ctx context.Context, t *testctx.T) {
-		// This span will be marked with error status
 		t.Error("something went wrong")
 	})
+
+	// Verify spans were recorded correctly
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 2)
+
+	// Check passing test span
+	passSpan := spans[0]
+	assert.Equal(t, "TestWithTracing/passing-test", passSpan.Name())
+	assert.Equal(t, codes.Ok, passSpan.Status().Code)
+	assert.Contains(t, passSpan.Attributes(), attribute.String("test.suite", "otel_test"))
+
+	// Check failing test span
+	failSpan := spans[1]
+	assert.Equal(t, "TestWithTracing/failing-test", failSpan.Name())
+	assert.Equal(t, codes.Error, failSpan.Status().Code)
+	assert.Equal(t, "test failed", failSpan.Status().Description)
+}
+
+func BenchmarkWithTracing(b *testing.B) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	bb := testctx.New(b)
+	bb.Use(otelmw.WithTracing[*testing.B](otelmw.Config{
+		TracerProvider: tracerProvider,
+	}))
+
+	bb.Run("traced-benchmark", func(ctx context.Context, b *testctx.B) {
+		bench := b.Unwrap()
+		for i := 0; i < bench.N; i++ {
+			time.Sleep(1 * time.Microsecond)
+		}
+	})
+
+	b.Logf("b.N: %d", b.N)
+
+	// Verify benchmark span was recorded
+	spans := spanRecorder.Ended()
+	for _, span := range spans {
+		// dump all span data
+		b.Logf("span: %+v", span)
+	}
+	require.Len(b, spans, b.N)
+
+	benchSpan := spans[0]
+	assert.Equal(b, "BenchmarkWithTracing/traced-benchmark", benchSpan.Name())
+	assert.Equal(b, codes.Ok, benchSpan.Status().Code)
 }
