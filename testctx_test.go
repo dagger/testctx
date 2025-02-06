@@ -145,3 +145,43 @@ func TestMiddlewareNesting(t *testing.T) {
 		})
 	})
 }
+
+func TestMiddlewareDynamicAddition(t *testing.T) {
+	var order []string
+	tt := testctx.New(t)
+	tt.Use(func(next testctx.TestFunc[*testing.T]) testctx.TestFunc[*testing.T] {
+		return func(ctx context.Context, t *testctx.W[*testing.T]) {
+			order = append(order, "first")
+			next(ctx, t)
+		}
+	})
+
+	tt.Run("parent", func(ctx context.Context, t *testctx.T) {
+		// Add middleware during test execution
+		t.Use(func(next testctx.TestFunc[*testing.T]) testctx.TestFunc[*testing.T] {
+			return func(ctx context.Context, t *testctx.W[*testing.T]) {
+				order = append(order, "dynamic")
+				next(ctx, t)
+			}
+		})
+
+		t.Run("child", func(ctx context.Context, t *testctx.T) {
+			order = append(order, "test")
+		})
+	})
+
+	tt.Run("parent 2", func(ctx context.Context, t *testctx.T) {
+		order = append(order, "parent 2")
+	})
+
+	// Expect first middleware to run for both parent and child,
+	// dynamic middleware to run for child only
+	assert.Equal(t, []string{
+		"first",    // outer middleware for parent
+		"first",    // outer middleware for child
+		"dynamic",  // inner middleware for child
+		"test",     // child test execution
+		"first",    // outer middleware for parent 2
+		"parent 2", // parent 2 test execution
+	}, order)
+}
