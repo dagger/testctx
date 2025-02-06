@@ -21,10 +21,10 @@ type W[T Runner[T]] struct {
 }
 
 // Middleware represents a function that can wrap a test function
-type Middleware[T Runner[T]] func(TestFunc[T]) TestFunc[T]
+type Middleware[T Runner[T]] func(RunFunc[T]) RunFunc[T]
 
-// TestFunc represents a test function that takes a context and a wrapper
-type TestFunc[T Runner[T]] func(context.Context, *W[T])
+// RunFunc represents a test function that takes a context and a wrapper
+type RunFunc[T Runner[T]] func(context.Context, *W[T])
 
 // New creates a new context-aware test helper
 func New[T Runner[T]](t T) *W[T] {
@@ -56,7 +56,7 @@ func (w *W[T]) Context() context.Context {
 }
 
 // Run runs a subtest with the given name and function
-func (w *W[T]) Run(name string, fn TestFunc[T]) bool {
+func (w *W[T]) Run(name string, fn RunFunc[T]) bool {
 	return w.tb.Run(name, func(t T) {
 		newW := &W[T]{
 			tb:         t,
@@ -112,8 +112,8 @@ type (
 	T = W[*testing.T]
 	// B is a wrapper around *testing.B
 	B = W[*testing.B]
-	// TestFn is a test function that takes a context and T
-	TestFn = TestFunc[*testing.T]
-	// BenchFn is a benchmark function that takes a context and B
-	BenchFn = TestFunc[*testing.B]
+	// TestFunc is a test function that takes a context and T
+	TestFunc = RunFunc[*testing.T]
+	// BenchFunc is a benchmark function that takes a context and B
+	BenchFunc = RunFunc[*testing.B]
 )
