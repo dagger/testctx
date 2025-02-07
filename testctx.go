@@ -2,6 +2,8 @@ package testctx
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -27,7 +29,9 @@ type Middleware[T Runner[T]] func(RunFunc[T]) RunFunc[T]
 type RunFunc[T Runner[T]] func(context.Context, *W[T])
 
 // New creates a new context-aware test helper
-func New[T Runner[T]](ctx context.Context, t T) *W[T] {
+func New[T Runner[T]](t T) *W[T] {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	return &W[T]{
 		tb:  t,
 		ctx: ctx,
@@ -44,10 +48,11 @@ func (w *W[T]) WithContext(ctx context.Context) *W[T] {
 }
 
 // Use adds middleware to the test helper
-func (w *W[T]) Use(m ...Middleware[T]) {
+func (w *W[T]) Use(m ...Middleware[T]) *W[T] {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.middleware = append(w.middleware, m...)
+	return w
 }
 
 // Context returns the current context
@@ -134,4 +139,33 @@ func lastSlashIndex(s string) int {
 		}
 	}
 	return -1
+}
+
+// RunSuite runs all test methods on the given suite as subtests
+func (w *W[T]) RunSuite(s any) {
+	suiteType := reflect.TypeOf(s)
+	suiteValue := reflect.ValueOf(s)
+
+	for i := 0; i < suiteType.NumMethod(); i++ {
+		method := suiteType.Method(i)
+		if !strings.HasPrefix(method.Name, "Test") {
+			continue
+		}
+
+		methodType := method.Type
+		if methodType.NumIn() != 3 || // receiver + context + W[T]
+			!methodType.In(1).AssignableTo(reflect.TypeOf((*context.Context)(nil)).Elem()) ||
+			!methodType.In(2).AssignableTo(reflect.TypeOf((*W[T])(nil))) {
+			continue
+		}
+
+		// Run each test method as a subtest
+		w.Run(method.Name, func(ctx context.Context, t *W[T]) {
+			method.Func.Call([]reflect.Value{
+				suiteValue,
+				reflect.ValueOf(ctx),
+				reflect.ValueOf(t),
+			})
+		})
+	}
 }

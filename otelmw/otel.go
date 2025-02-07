@@ -2,7 +2,10 @@ package otelmw
 
 import (
 	"context"
+	"os"
+	"testing"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/testctx"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,6 +19,23 @@ type Config struct {
 	TracerProvider trace.TracerProvider
 	// Attributes to add to all test spans
 	Attributes []attribute.KeyValue
+}
+
+var propagatedCtx = context.Background()
+
+// Main is a helper function that initializes OTel and runs the tests
+// before exiting. Use it in your TestMain function.
+//
+// Main covers initializing the OTel trace and logger providers, pointing
+// to standard OTEL_* env vars.
+//
+// It also initializes a context that will be used to propagate trace
+// context to subtests.
+func Main(m *testing.M) {
+	propagatedCtx = telemetry.InitEmbedded(context.Background(), nil)
+	exitCode := m.Run()
+	telemetry.Close()
+	os.Exit(exitCode)
 }
 
 // testSpanKey is the key used to store the test span in the context
@@ -38,6 +58,11 @@ func WithTracing[T testctx.Runner[T]](cfg ...Config) testctx.Middleware[T] {
 
 	return func(next testctx.RunFunc[T]) testctx.RunFunc[T] {
 		return func(ctx context.Context, w *testctx.W[T]) {
+			// Inherit from any trace context that Main picked up
+			if !trace.SpanContextFromContext(ctx).IsValid() {
+				ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(propagatedCtx))
+			}
+
 			// Start a new span for this test/benchmark
 			opts := []trace.SpanStartOption{
 				trace.WithAttributes(c.Attributes...),

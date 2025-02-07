@@ -11,7 +11,7 @@ import (
 func TestMiddlewareInvocation(t *testing.T) {
 	var invocations []string
 
-	tt := testctx.New(context.Background(), t)
+	tt := testctx.New(t)
 	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			invocations = append(invocations, "before:outer")
@@ -45,7 +45,7 @@ func TestMiddlewareInvocation(t *testing.T) {
 func TestMiddlewareReuse(t *testing.T) {
 	var count int
 
-	tt := testctx.New(context.Background(), t)
+	tt := testctx.New(t)
 	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.T) {
 			count++
@@ -73,7 +73,7 @@ func TestCleanup(t *testing.T) {
 		}, cleanupOrder)
 	})
 
-	tt := testctx.New(context.Background(), t)
+	tt := testctx.New(t)
 	tt.Cleanup(func() {
 		cleanupOrder = append(cleanupOrder, "parent")
 	})
@@ -97,7 +97,7 @@ func TestCleanup(t *testing.T) {
 func TestContextPropagation(t *testing.T) {
 	type ctxKey struct{}
 
-	tt := testctx.New(context.Background(), t)
+	tt := testctx.New(t)
 	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			count := 0
@@ -125,7 +125,7 @@ func TestContextPropagation(t *testing.T) {
 func TestMiddlewareNesting(t *testing.T) {
 	var callCount int
 
-	tt := testctx.New(context.Background(), t)
+	tt := testctx.New(t)
 	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			callCount++
@@ -148,7 +148,7 @@ func TestMiddlewareNesting(t *testing.T) {
 
 func TestMiddlewareDynamicAddition(t *testing.T) {
 	var order []string
-	tt := testctx.New(context.Background(), t)
+	tt := testctx.New(t)
 	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			order = append(order, "first")
