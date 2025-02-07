@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	dagger.io/dagger v0.15.3
-	github.com/dagger/testctx v0.1.0
+	github.com/dagger/testctx v0.0.1
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/sdk v1.34.0
@@ -42,5 +42,3 @@ require (
 	google.golang.org/protobuf v1.35.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/dagger/testctx => ../
