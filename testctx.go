@@ -145,18 +145,7 @@ func (w *W[T]) Run(name string, fn RunFunc[T]) bool {
 		newW.tb = t
 		newW.TB = t
 
-		// First wrap the function to ensure context sync
-		wrapped := func(ctx context.Context, t *W[T]) {
-			fn(ctx, t.WithContext(ctx))
-		}
-
-		// Walk the middleware in reverse order so the last middleware added
-		// becomes the innermost wrapper.
-		for i := len(w.middleware) - 1; i >= 0; i-- {
-			wrapped = w.middleware[i](wrapped)
-		}
-
-		// Call the wrapped function, executing outer middleware first
+		wrapped := w.wrapWithMiddleware(fn)
 		wrapped(newW.ctx, newW)
 	})
 }
@@ -251,28 +240,32 @@ func (w *W[T]) RunSuite(s any) {
 	suiteType := reflect.TypeOf(s)
 	suiteValue := reflect.ValueOf(s)
 
-	for i := 0; i < suiteType.NumMethod(); i++ {
-		method := suiteType.Method(i)
-		if !strings.HasPrefix(method.Name, "Test") {
-			continue
-		}
+	wrapped := w.wrapWithMiddleware(func(ctx context.Context, t *W[T]) {
+		for i := 0; i < suiteType.NumMethod(); i++ {
+			method := suiteType.Method(i)
+			if !strings.HasPrefix(method.Name, "Test") {
+				continue
+			}
 
-		methodType := method.Type
-		if methodType.NumIn() != 3 || // receiver + context + W[T]
-			!methodType.In(1).AssignableTo(reflect.TypeOf((*context.Context)(nil)).Elem()) ||
-			!methodType.In(2).AssignableTo(reflect.TypeOf((*W[T])(nil))) {
-			continue
-		}
+			methodType := method.Type
+			if methodType.NumIn() != 3 || // receiver + context + W[T]
+				!methodType.In(1).AssignableTo(reflect.TypeOf((*context.Context)(nil)).Elem()) ||
+				!methodType.In(2).AssignableTo(reflect.TypeOf((*W[T])(nil))) {
+				continue
+			}
 
-		// Run each test method as a subtest
-		w.Run(method.Name, func(ctx context.Context, t *W[T]) {
-			method.Func.Call([]reflect.Value{
-				suiteValue,
-				reflect.ValueOf(ctx),
-				reflect.ValueOf(t),
+			// Run each test method as a subtest
+			t.Run(method.Name, func(ctx context.Context, t *W[T]) {
+				method.Func.Call([]reflect.Value{
+					suiteValue,
+					reflect.ValueOf(ctx),
+					reflect.ValueOf(t),
+				})
 			})
-		})
-	}
+		}
+	})
+
+	wrapped(w.ctx, w)
 }
 
 // clone creates a shallow copy of the wrapper with all fields preserved
@@ -293,4 +286,20 @@ func lastSlashIndex(s string) int {
 		}
 	}
 	return -1
+}
+
+// wrapWithMiddleware wraps a test function with all registered middleware
+func (w *W[T]) wrapWithMiddleware(fn RunFunc[T]) RunFunc[T] {
+	// First wrap the function to ensure context sync
+	wrapped := func(ctx context.Context, t *W[T]) {
+		fn(ctx, t.WithContext(ctx))
+	}
+
+	// Walk the middleware in reverse order so the last middleware added
+	// becomes the innermost wrapper.
+	for i := len(w.middleware) - 1; i >= 0; i-- {
+		wrapped = w.middleware[i](wrapped)
+	}
+
+	return wrapped
 }
