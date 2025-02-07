@@ -4,7 +4,6 @@ import (
 	"context"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -14,12 +13,20 @@ type Runner[T testing.TB] interface {
 	Run(string, func(T)) bool
 }
 
+// Logger represents something that can receive test log messages
+type Logger interface {
+	Log(args ...any)
+	Logf(format string, args ...any)
+	Error(args ...any)
+	Errorf(format string, args ...any)
+}
+
 // W is a context-aware wrapper for test/benchmark types
 type W[T Runner[T]] struct {
 	tb         T
 	ctx        context.Context
 	middleware []Middleware[T]
-	mu         sync.RWMutex
+	logger     Logger
 }
 
 // Middleware represents a function that can wrap a test function
@@ -29,13 +36,26 @@ type Middleware[T Runner[T]] func(RunFunc[T]) RunFunc[T]
 type RunFunc[T Runner[T]] func(context.Context, *W[T])
 
 // New creates a new context-aware test helper
-func New[T Runner[T]](t T) *W[T] {
+func New[T Runner[T]](t T, middleware ...Middleware[T]) *W[T] {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	return &W[T]{
-		tb:  t,
-		ctx: ctx,
+		tb:         t,
+		ctx:        ctx,
+		middleware: middleware,
 	}
+}
+
+// Name returns the name of the test
+func (w *W[T]) Name() string { return w.tb.Name() }
+
+// BaseName returns the name of the test without the full path prefix
+func (w *W[T]) BaseName() string {
+	name := w.Name()
+	if idx := lastSlashIndex(name); idx >= 0 {
+		return name[idx+1:]
+	}
+	return name
 }
 
 // WithContext creates a new wrapper with the given context
@@ -44,15 +64,18 @@ func (w *W[T]) WithContext(ctx context.Context) *W[T] {
 		tb:         w.tb,
 		ctx:        ctx,
 		middleware: w.middleware,
+		logger:     w.logger,
 	}
 }
 
-// Use adds middleware to the test helper
-func (w *W[T]) Use(m ...Middleware[T]) *W[T] {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.middleware = append(w.middleware, m...)
-	return w
+// Using returns a new wrapper with the given middleware
+func (w *W[T]) Using(m ...Middleware[T]) *W[T] {
+	return &W[T]{
+		tb:         w.tb,
+		ctx:        w.ctx,
+		middleware: append(w.middleware[:], m...),
+		logger:     w.logger,
+	}
 }
 
 // Context returns the current context
@@ -67,6 +90,7 @@ func (w *W[T]) Run(name string, fn RunFunc[T]) bool {
 			tb:         t,
 			ctx:        w.ctx,
 			middleware: w.middleware,
+			logger:     w.logger,
 		}
 
 		// First wrap the function to ensure context sync
@@ -88,23 +112,79 @@ func (w *W[T]) Cleanup(f func()) {
 	w.tb.Cleanup(f)
 }
 
-// Forward testing.TB methods
-func (w *W[T]) Error(args ...any)                 { w.tb.Error(args...) }
-func (w *W[T]) Errorf(format string, args ...any) { w.tb.Errorf(format, args...) }
-func (w *W[T]) Fail()                             { w.tb.Fail() }
-func (w *W[T]) FailNow()                          { w.tb.FailNow() }
-func (w *W[T]) Failed() bool                      { return w.tb.Failed() }
-func (w *W[T]) Fatal(args ...any)                 { w.tb.Fatal(args...) }
-func (w *W[T]) Fatalf(format string, args ...any) { w.tb.Fatalf(format, args...) }
-func (w *W[T]) Helper()                           { w.tb.Helper() }
-func (w *W[T]) Log(args ...any)                   { w.tb.Log(args...) }
-func (w *W[T]) Logf(format string, args ...any)   { w.tb.Logf(format, args...) }
-func (w *W[T]) Name() string                      { return w.tb.Name() }
-func (w *W[T]) Skip(args ...any)                  { w.tb.Skip(args...) }
-func (w *W[T]) SkipNow()                          { w.tb.SkipNow() }
-func (w *W[T]) Skipf(format string, args ...any)  { w.tb.Skipf(format, args...) }
-func (w *W[T]) Skipped() bool                     { return w.tb.Skipped() }
-func (w *W[T]) TempDir() string                   { return w.tb.TempDir() }
+// WithLogger returns a new wrapper with the given logger
+func (w *W[T]) WithLogger(l Logger) *W[T] {
+	return &W[T]{
+		tb:         w.tb,
+		ctx:        w.ctx,
+		middleware: w.middleware,
+		logger:     l,
+	}
+}
+
+func (w *W[T]) Error(args ...any) {
+	w.tb.Error(args...)
+	if w.logger != nil {
+		w.logger.Error(args...)
+	}
+}
+
+func (w *W[T]) Errorf(format string, args ...any) {
+	w.tb.Errorf(format, args...)
+	if w.logger != nil {
+		w.logger.Errorf(format, args...)
+	}
+}
+
+func (w *W[T]) Fail()        { w.tb.Fail() }
+func (w *W[T]) FailNow()     { w.tb.FailNow() }
+func (w *W[T]) Failed() bool { return w.tb.Failed() }
+func (w *W[T]) Fatal(args ...any) {
+	if w.logger != nil {
+		w.logger.Error(args...)
+	}
+	w.tb.Fatal(args...)
+}
+
+func (w *W[T]) Fatalf(format string, args ...any) {
+	if w.logger != nil {
+		w.logger.Errorf(format, args...)
+	}
+	w.tb.Fatalf(format, args...)
+}
+
+func (w *W[T]) Helper() { w.tb.Helper() }
+func (w *W[T]) Log(args ...any) {
+	w.tb.Log(args...)
+	if w.logger != nil {
+		w.logger.Log(args...)
+	}
+}
+
+func (w *W[T]) Logf(format string, args ...any) {
+	w.tb.Logf(format, args...)
+	if w.logger != nil {
+		w.logger.Logf(format, args...)
+	}
+}
+
+func (w *W[T]) Skip(args ...any) {
+	if w.logger != nil {
+		w.logger.Log(args...)
+	}
+	w.tb.Skip(args...)
+}
+
+func (w *W[T]) SkipNow() { w.tb.SkipNow() }
+func (w *W[T]) Skipf(format string, args ...any) {
+	if w.logger != nil {
+		w.logger.Logf(format, args...)
+	}
+	w.tb.Skipf(format, args...)
+}
+
+func (w *W[T]) Skipped() bool   { return w.tb.Skipped() }
+func (w *W[T]) TempDir() string { return w.tb.TempDir() }
 
 // Unwrap returns the underlying test/benchmark type
 func (w *W[T]) Unwrap() T {
@@ -122,15 +202,6 @@ type (
 	// BenchFunc is a benchmark function that takes a context and B
 	BenchFunc = RunFunc[*testing.B]
 )
-
-// BaseName returns the name of the test without the full path prefix
-func (w *W[T]) BaseName() string {
-	name := w.Name()
-	if idx := lastSlashIndex(name); idx >= 0 {
-		return name[idx+1:]
-	}
-	return name
-}
 
 func lastSlashIndex(s string) int {
 	for i := len(s) - 1; i >= 0; i-- {

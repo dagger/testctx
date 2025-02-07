@@ -2,6 +2,7 @@ package otelmw_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -16,16 +17,15 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	otelmw.Main(m)
+	os.Exit(otelmw.Main(m))
 }
 
 func TestOTel(t *testing.T) {
-	testctx.New(t).
-		Use(
-			testctx.WithParallel(),
-			otelmw.WithTracing[*testing.T](),
-		).
-		RunSuite(OTelSuite{})
+	testctx.New(t,
+		testctx.WithParallel(),
+		otelmw.WithTracing[*testing.T](),
+		otelmw.WithLogging[*testing.T](),
+	).RunSuite(OTelSuite{})
 }
 
 type OTelSuite struct{}
@@ -88,8 +88,7 @@ func (OTelSuite) TestAttributes(ctx context.Context, t *testctx.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t.Unwrap())
-	tt.Use(otelmw.WithTracing[*testing.T](otelmw.Config{
+	tt := testctx.New(t.Unwrap(), otelmw.WithTracing[*testing.T](otelmw.TraceConfig{
 		TracerProvider: tracerProvider,
 		Attributes: []attribute.KeyValue{
 			attribute.String("test.suite", "otel_test"),
@@ -115,8 +114,7 @@ func BenchmarkWithTracing(b *testing.B) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	bb := testctx.New(b)
-	bb.Use(otelmw.WithTracing[*testing.B](otelmw.Config{
+	bb := testctx.New(b, otelmw.WithTracing[*testing.B](otelmw.TraceConfig{
 		TracerProvider: tracerProvider,
 	}))
 
@@ -146,8 +144,7 @@ func (OTelSuite) TestTracingNesting(ctx context.Context, t *testctx.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t.Unwrap())
-	tt.Use(otelmw.WithTracing[*testing.T](otelmw.Config{
+	tt := testctx.New(t.Unwrap(), otelmw.WithTracing[*testing.T](otelmw.TraceConfig{
 		TracerProvider: tracerProvider,
 	}))
 
@@ -183,4 +180,20 @@ func (OTelSuite) TestTracingNesting(ctx context.Context, t *testctx.T) {
 	// Verify timing - each span should end after its children
 	assert.True(t, grandchild.EndTime().Before(child.EndTime()))
 	assert.True(t, child.EndTime().Before(parent.EndTime()))
+}
+
+func (OTelSuite) TestLogging(ctx context.Context, t *testctx.T) {
+	// Regular logs
+	t.Log("simple log message")
+	t.Logf("formatted %s message", "log")
+
+	// Error logs
+	t.Error("simple error message")
+	t.Errorf("formatted %s message", "error")
+
+	// Nested test with logs
+	t.Run("child", func(ctx context.Context, t *testctx.T) {
+		t.Log("child log message")
+		t.Error("child error message")
+	})
 }
