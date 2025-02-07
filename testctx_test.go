@@ -11,16 +11,13 @@ import (
 func TestMiddlewareInvocation(t *testing.T) {
 	var invocations []string
 
-	tt := testctx.New(t)
-	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
+	tt := testctx.New(t).Using(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			invocations = append(invocations, "before:outer")
 			next(ctx, t)
 			invocations = append(invocations, "after:outer")
 		}
-	})
-
-	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
+	}, func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			invocations = append(invocations, "before:inner")
 			next(ctx, t)
@@ -45,8 +42,7 @@ func TestMiddlewareInvocation(t *testing.T) {
 func TestMiddlewareReuse(t *testing.T) {
 	var count int
 
-	tt := testctx.New(t)
-	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
+	tt := testctx.New(t).Using(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.T) {
 			count++
 			next(ctx, t)
@@ -97,8 +93,7 @@ func TestCleanup(t *testing.T) {
 func TestContextPropagation(t *testing.T) {
 	type ctxKey struct{}
 
-	tt := testctx.New(t)
-	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
+	tt := testctx.New(t).Using(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			count := 0
 			if v := ctx.Value(ctxKey{}); v != nil {
@@ -125,8 +120,7 @@ func TestContextPropagation(t *testing.T) {
 func TestMiddlewareNesting(t *testing.T) {
 	var callCount int
 
-	tt := testctx.New(t)
-	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
+	tt := testctx.New(t).Using(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			callCount++
 			next(ctx, t)
@@ -148,8 +142,7 @@ func TestMiddlewareNesting(t *testing.T) {
 
 func TestMiddlewareDynamicAddition(t *testing.T) {
 	var order []string
-	tt := testctx.New(t)
-	tt.Use(func(next testctx.TestFunc) testctx.TestFunc {
+	tt := testctx.New(t).Using(func(next testctx.TestFunc) testctx.TestFunc {
 		return func(ctx context.Context, t *testctx.W[*testing.T]) {
 			order = append(order, "first")
 			next(ctx, t)
@@ -158,7 +151,7 @@ func TestMiddlewareDynamicAddition(t *testing.T) {
 
 	tt.Run("parent", func(ctx context.Context, t *testctx.T) {
 		// Add middleware during test execution
-		t.Use(func(next testctx.TestFunc) testctx.TestFunc {
+		t = t.Using(func(next testctx.TestFunc) testctx.TestFunc {
 			return func(ctx context.Context, t *testctx.W[*testing.T]) {
 				order = append(order, "dynamic")
 				next(ctx, t)

@@ -1,3 +1,6 @@
+// Package testctx provides a context-aware wrapper around testing.T and testing.B
+// with support for middleware and context propagation. It aims to represent what
+// *testing.T might have looked like if context.Context existed at the time it was created.
 package testctx
 
 import (
@@ -5,6 +8,22 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+)
+
+// Common type aliases for convenience
+type (
+	// T is a wrapper around *testing.T
+	T = W[*testing.T]
+	// B is a wrapper around *testing.B
+	B = W[*testing.B]
+	// MiddlewareT is a middleware function that takes a context and T
+	MiddlewareT = Middleware[*testing.T]
+	// MiddlewareB is a middleware function that takes a context and B
+	MiddlewareB = Middleware[*testing.B]
+	// TestFunc is a test function that takes a context and T
+	TestFunc = RunFunc[*testing.T]
+	// BenchFunc is a benchmark function that takes a context and B
+	BenchFunc = RunFunc[*testing.B]
 )
 
 // Runner is a constraint for types that support subtests/subbenchmarks
@@ -21,7 +40,8 @@ type Logger interface {
 	Errorf(format string, args ...any)
 }
 
-// W is a context-aware wrapper for test/benchmark types
+// W is a context-aware wrapper for test/benchmark types that supports middleware
+// and context propagation
 type W[T Runner[T]] struct {
 	tb         T
 	ctx        context.Context
@@ -33,6 +53,7 @@ type W[T Runner[T]] struct {
 	testing.TB
 }
 
+// Ensure W implements testing.TB
 var _ testing.TB = (*W[*testing.T])(nil)
 var _ testing.TB = (*W[*testing.B])(nil)
 
@@ -42,7 +63,13 @@ type Middleware[T Runner[T]] func(RunFunc[T]) RunFunc[T]
 // RunFunc represents a test function that takes a context and a wrapper
 type RunFunc[T Runner[T]] func(context.Context, *W[T])
 
-// New creates a new context-aware test helper
+// New creates a context-aware test wrapper. The wrapper provides:
+//   - Context propagation through test hierarchies
+//   - Middleware support for test instrumentation
+//   - Logging interception via WithLogger
+//
+// The context is automatically canceled when the test completes.
+// See Using() for details on middleware behavior.
 func New[T Runner[T]](t T, middleware ...Middleware[T]) *W[T] {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -54,6 +81,40 @@ func New[T Runner[T]](t T, middleware ...Middleware[T]) *W[T] {
 	}
 }
 
+// Using adds middleware to the wrapper. Middleware are executed in a nested pattern:
+// the first middleware added becomes the outermost wrapper, the last middleware added becomes
+// the innermost wrapper. For example:
+//
+//	t.Using(first, second, third)
+//
+// Results in the execution order:
+//
+//	first {
+//	    second {
+//	        third {
+//	            test
+//	        }
+//	    }
+//	}
+//
+// This pattern ensures that:
+// 1. "before" middleware code executes from outside-in (first -> third)
+// 2. The test executes
+// 3. "after" middleware code executes from inside-out (third -> first)
+//
+// This matches the behavior of other middleware systems like net/http handlers
+// and allows middleware to properly wrap both the setup and cleanup of resources.
+func (w *W[T]) Using(m ...Middleware[T]) *W[T] {
+	clone := w.clone()
+	clone.middleware = append(clone.middleware[:], m...)
+	return clone
+}
+
+// Unwrap returns the underlying test/benchmark type
+func (w *W[T]) Unwrap() T {
+	return w.tb
+}
+
 // BaseName returns the name of the test without the full path prefix
 func (w *W[T]) BaseName() string {
 	name := w.Name()
@@ -63,63 +124,51 @@ func (w *W[T]) BaseName() string {
 	return name
 }
 
-// WithContext creates a new wrapper with the given context
-func (w *W[T]) WithContext(ctx context.Context) *W[T] {
-	return &W[T]{
-		tb:         w.tb,
-		ctx:        ctx,
-		middleware: w.middleware,
-		logger:     w.logger,
-	}
-}
-
-// Using returns a new wrapper with the given middleware
-func (w *W[T]) Using(m ...Middleware[T]) *W[T] {
-	return &W[T]{
-		tb:         w.tb,
-		ctx:        w.ctx,
-		middleware: append(w.middleware[:], m...),
-		logger:     w.logger,
-	}
-}
-
 // Context returns the current context
 func (w *W[T]) Context() context.Context {
 	return w.ctx
 }
 
-// Run runs a subtest with the given name and function
+// WithContext creates a new wrapper with the given context
+func (w *W[T]) WithContext(ctx context.Context) *W[T] {
+	clone := w.clone()
+	clone.ctx = ctx
+	return clone
+}
+
+// Run runs a subtest with the given name and function. The function will be wrapped
+// by any middleware registered via Using() or New(), with middleware executing in
+// the order described by Using().
 func (w *W[T]) Run(name string, fn RunFunc[T]) bool {
 	return w.tb.Run(name, func(t T) {
-		newW := &W[T]{
-			tb:         t,
-			ctx:        w.ctx,
-			middleware: w.middleware,
-			logger:     w.logger,
-		}
+		newW := w.clone()
+		newW.tb = t
+		newW.TB = t
 
 		// First wrap the function to ensure context sync
 		wrapped := func(ctx context.Context, t *W[T]) {
 			fn(ctx, t.WithContext(ctx))
 		}
 
-		// Then apply middleware in reverse order
+		// Walk the middleware in reverse order so the last middleware added
+		// becomes the innermost wrapper.
 		for i := len(w.middleware) - 1; i >= 0; i-- {
 			wrapped = w.middleware[i](wrapped)
 		}
 
+		// Call the wrapped function, executing outer middleware first
 		wrapped(newW.ctx, newW)
 	})
 }
 
-// WithLogger returns a new wrapper with the given logger
+// WithLogger returns a new wrapper with the given logger. The logger will receive copies
+// of all test log messages (Log, Logf), errors (Error, Errorf), fatal errors
+// (Fatal, Fatalf), and skip notifications (Skip, Skipf). This allows test output
+// to be captured or redirected while still maintaining the original test behavior.
 func (w *W[T]) WithLogger(l Logger) *W[T] {
-	return &W[T]{
-		tb:         w.tb,
-		ctx:        w.ctx,
-		middleware: w.middleware,
-		logger:     l,
-	}
+	clone := w.clone()
+	clone.logger = l
+	return clone
 }
 
 // Error calls through to the underlying test/benchmark type and logs if a logger is set
@@ -186,33 +235,18 @@ func (w *W[T]) Skipf(format string, args ...any) {
 	w.tb.Skipf(format, args...)
 }
 
-// Unwrap returns the underlying test/benchmark type
-func (w *W[T]) Unwrap() T {
-	return w.tb
-}
-
-// Common type aliases for convenience
-type (
-	// T is a wrapper around *testing.T
-	T = W[*testing.T]
-	// B is a wrapper around *testing.B
-	B = W[*testing.B]
-	// TestFunc is a test function that takes a context and T
-	TestFunc = RunFunc[*testing.T]
-	// BenchFunc is a benchmark function that takes a context and B
-	BenchFunc = RunFunc[*testing.B]
-)
-
-func lastSlashIndex(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '/' {
-			return i
-		}
-	}
-	return -1
-}
-
-// RunSuite runs all test methods on the given suite as subtests
+// RunSuite runs all methods on s that match the test method pattern:
+//   - Name starts with "Test"
+//   - Takes (context.Context, *W[T]) parameters
+//
+// For example:
+//
+//	type MySuite struct{}
+//	func (s *MySuite) TestFoo(ctx context.Context, t *testctx.T) {}
+//
+//	func TestSuite(t *testing.T) {
+//	    testctx.New(t).RunSuite(&MySuite{})
+//	}
 func (w *W[T]) RunSuite(s any) {
 	suiteType := reflect.TypeOf(s)
 	suiteValue := reflect.ValueOf(s)
@@ -241,7 +275,22 @@ func (w *W[T]) RunSuite(s any) {
 	}
 }
 
-// Setenv sets an environment variable for the test
-func (w *W[T]) Setenv(key, value string) {
-	w.tb.Setenv(key, value)
+// clone creates a shallow copy of the wrapper with all fields preserved
+func (w *W[T]) clone() *W[T] {
+	return &W[T]{
+		TB:         w.TB,
+		tb:         w.tb,
+		ctx:        w.ctx,
+		middleware: w.middleware,
+		logger:     w.logger,
+	}
+}
+
+func lastSlashIndex(s string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '/' {
+			return i
+		}
+	}
+	return -1
 }
