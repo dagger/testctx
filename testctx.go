@@ -27,7 +27,14 @@ type W[T Runner[T]] struct {
 	ctx        context.Context
 	middleware []Middleware[T]
 	logger     Logger
+
+	// we have to embed testing.TB to become a testing.TB ourselves,
+	// since it has a private method
+	testing.TB
 }
+
+var _ testing.TB = (*W[*testing.T])(nil)
+var _ testing.TB = (*W[*testing.B])(nil)
 
 // Middleware represents a function that can wrap a test function
 type Middleware[T Runner[T]] func(RunFunc[T]) RunFunc[T]
@@ -40,14 +47,12 @@ func New[T Runner[T]](t T, middleware ...Middleware[T]) *W[T] {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	return &W[T]{
+		TB:         t,
 		tb:         t,
 		ctx:        ctx,
 		middleware: middleware,
 	}
 }
-
-// Name returns the name of the test
-func (w *W[T]) Name() string { return w.tb.Name() }
 
 // BaseName returns the name of the test without the full path prefix
 func (w *W[T]) BaseName() string {
@@ -107,11 +112,6 @@ func (w *W[T]) Run(name string, fn RunFunc[T]) bool {
 	})
 }
 
-// Cleanup registers a function to be called when the test completes
-func (w *W[T]) Cleanup(f func()) {
-	w.tb.Cleanup(f)
-}
-
 // WithLogger returns a new wrapper with the given logger
 func (w *W[T]) WithLogger(l Logger) *W[T] {
 	return &W[T]{
@@ -122,6 +122,7 @@ func (w *W[T]) WithLogger(l Logger) *W[T] {
 	}
 }
 
+// Error calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Error(args ...any) {
 	w.tb.Error(args...)
 	if w.logger != nil {
@@ -129,6 +130,7 @@ func (w *W[T]) Error(args ...any) {
 	}
 }
 
+// Errorf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Errorf(format string, args ...any) {
 	w.tb.Errorf(format, args...)
 	if w.logger != nil {
@@ -136,9 +138,7 @@ func (w *W[T]) Errorf(format string, args ...any) {
 	}
 }
 
-func (w *W[T]) Fail()        { w.tb.Fail() }
-func (w *W[T]) FailNow()     { w.tb.FailNow() }
-func (w *W[T]) Failed() bool { return w.tb.Failed() }
+// Fatal calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Fatal(args ...any) {
 	if w.logger != nil {
 		w.logger.Error(args...)
@@ -146,6 +146,7 @@ func (w *W[T]) Fatal(args ...any) {
 	w.tb.Fatal(args...)
 }
 
+// Fatalf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Fatalf(format string, args ...any) {
 	if w.logger != nil {
 		w.logger.Errorf(format, args...)
@@ -153,7 +154,7 @@ func (w *W[T]) Fatalf(format string, args ...any) {
 	w.tb.Fatalf(format, args...)
 }
 
-func (w *W[T]) Helper() { w.tb.Helper() }
+// Log calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Log(args ...any) {
 	w.tb.Log(args...)
 	if w.logger != nil {
@@ -161,6 +162,7 @@ func (w *W[T]) Log(args ...any) {
 	}
 }
 
+// Logf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Logf(format string, args ...any) {
 	w.tb.Logf(format, args...)
 	if w.logger != nil {
@@ -168,6 +170,7 @@ func (w *W[T]) Logf(format string, args ...any) {
 	}
 }
 
+// Skip calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Skip(args ...any) {
 	if w.logger != nil {
 		w.logger.Log(args...)
@@ -175,16 +178,13 @@ func (w *W[T]) Skip(args ...any) {
 	w.tb.Skip(args...)
 }
 
-func (w *W[T]) SkipNow() { w.tb.SkipNow() }
+// Skipf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Skipf(format string, args ...any) {
 	if w.logger != nil {
 		w.logger.Logf(format, args...)
 	}
 	w.tb.Skipf(format, args...)
 }
-
-func (w *W[T]) Skipped() bool   { return w.tb.Skipped() }
-func (w *W[T]) TempDir() string { return w.tb.TempDir() }
 
 // Unwrap returns the underlying test/benchmark type
 func (w *W[T]) Unwrap() T {
@@ -239,4 +239,9 @@ func (w *W[T]) RunSuite(s any) {
 			})
 		})
 	}
+}
+
+// Setenv sets an environment variable for the test
+func (w *W[T]) Setenv(key, value string) {
+	w.tb.Setenv(key, value)
 }
