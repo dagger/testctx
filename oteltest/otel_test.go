@@ -1,4 +1,4 @@
-package otelmw_test
+package oteltest_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/otelmw"
+	"github.com/dagger/testctx/oteltest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,14 +17,14 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(otelmw.Main(m))
+	os.Exit(oteltest.Main(m))
 }
 
 func TestOTel(t *testing.T) {
 	testctx.New(t,
 		testctx.WithParallel(),
-		otelmw.WithTracing[*testing.T](),
-		otelmw.WithLogging[*testing.T](),
+		oteltest.WithTracing[*testing.T](),
+		oteltest.WithLogging[*testing.T](),
 	).RunSuite(OTelSuite{})
 }
 
@@ -88,7 +88,7 @@ func (OTelSuite) TestAttributes(ctx context.Context, t *testctx.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t.Unwrap(), otelmw.WithTracing[*testing.T](otelmw.TraceConfig{
+	tt := testctx.New(t.Unwrap(), oteltest.WithTracing[*testing.T](oteltest.TraceConfig{
 		TracerProvider: tracerProvider,
 		Attributes: []attribute.KeyValue{
 			attribute.String("test.suite", "otel_test"),
@@ -114,7 +114,7 @@ func BenchmarkWithTracing(b *testing.B) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	bb := testctx.New(b, otelmw.WithTracing[*testing.B](otelmw.TraceConfig{
+	bb := testctx.New(b, oteltest.WithTracing[*testing.B](oteltest.TraceConfig{
 		TracerProvider: tracerProvider,
 	}))
 
@@ -144,7 +144,7 @@ func (OTelSuite) TestTracingNesting(ctx context.Context, t *testctx.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t.Unwrap(), otelmw.WithTracing[*testing.T](otelmw.TraceConfig{
+	tt := testctx.New(t.Unwrap(), oteltest.WithTracing[*testing.T](oteltest.TraceConfig{
 		TracerProvider: tracerProvider,
 	}))
 

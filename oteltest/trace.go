@@ -1,4 +1,4 @@
-package otelmw
+package oteltest
 
 import (
 	"context"

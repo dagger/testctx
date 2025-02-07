@@ -1,4 +1,4 @@
-module github.com/dagger/testctx/otelmw
+module github.com/dagger/testctx/oteltest
 
 go 1.23
 
