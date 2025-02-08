@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	dagger.io/dagger v0.15.3
-	github.com/dagger/testctx v0.0.2
+	github.com/dagger/testctx v0.0.4
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/sdk v1.34.0
