@@ -25,7 +25,7 @@ func TestOTel(t *testing.T) {
 		testctx.WithParallel(),
 		oteltest.WithTracing[*testing.T](),
 		oteltest.WithLogging[*testing.T](),
-	).RunSuite(OTelSuite{})
+	).RunTests(OTelSuite{})
 }
 
 type OTelSuite struct{}

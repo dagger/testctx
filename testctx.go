@@ -16,10 +16,10 @@ type (
 	T = W[*testing.T]
 	// B is a wrapper around *testing.B
 	B = W[*testing.B]
-	// MiddlewareT is a middleware function that takes a context and T
-	MiddlewareT = Middleware[*testing.T]
-	// MiddlewareB is a middleware function that takes a context and B
-	MiddlewareB = Middleware[*testing.B]
+	// TestMiddleware is a middleware function that takes a context and T
+	TestMiddleware = Middleware[*testing.T]
+	// BenchMiddleware is a middleware function that takes a context and B
+	BenchMiddleware = Middleware[*testing.B]
 	// TestFunc is a test function that takes a context and T
 	TestFunc = RunFunc[*testing.T]
 	// BenchFunc is a benchmark function that takes a context and B
@@ -224,44 +224,44 @@ func (w *W[T]) Skipf(format string, args ...any) {
 	w.tb.Skipf(format, args...)
 }
 
-// RunSuite runs all methods on s that match the test method pattern:
-//   - Name starts with "Test"
-//   - Takes (context.Context, *W[T]) parameters
-//
-// For example:
-//
-//	type MySuite struct{}
-//	func (s *MySuite) TestFoo(ctx context.Context, t *testctx.T) {}
-//
-//	func TestSuite(t *testing.T) {
-//	    testctx.New(t).RunSuite(&MySuite{})
-//	}
-func (w *W[T]) RunSuite(s any) {
-	suiteType := reflect.TypeOf(s)
-	suiteValue := reflect.ValueOf(s)
+// RunTests runs Test* methods from one or more test containers
+func (w *W[T]) RunTests(containers ...any) {
+	w.runMethods(containers, "Test")
+}
 
+// RunBenchmarks runs Benchmark* methods from one or more benchmark containers
+func (w *W[T]) RunBenchmarks(containers ...any) {
+	w.runMethods(containers, "Benchmark")
+}
+
+// runMethods is the internal implementation that handles both types
+func (w *W[T]) runMethods(containers []any, prefix string) {
 	wrapped := w.wrapWithMiddleware(func(ctx context.Context, t *W[T]) {
-		for i := 0; i < suiteType.NumMethod(); i++ {
-			method := suiteType.Method(i)
-			if !strings.HasPrefix(method.Name, "Test") {
-				continue
-			}
+		for _, container := range containers {
+			containerType := reflect.TypeOf(container)
+			containerValue := reflect.ValueOf(container)
 
-			methodType := method.Type
-			if methodType.NumIn() != 3 || // receiver + context + W[T]
-				!methodType.In(1).AssignableTo(reflect.TypeOf((*context.Context)(nil)).Elem()) ||
-				!methodType.In(2).AssignableTo(reflect.TypeOf((*W[T])(nil))) {
-				continue
-			}
+			for i := 0; i < containerType.NumMethod(); i++ {
+				method := containerType.Method(i)
+				if !strings.HasPrefix(method.Name, prefix) {
+					continue
+				}
 
-			// Run each test method as a subtest
-			t.Run(method.Name, func(ctx context.Context, t *W[T]) {
-				method.Func.Call([]reflect.Value{
-					suiteValue,
-					reflect.ValueOf(ctx),
-					reflect.ValueOf(t),
+				methodType := method.Type
+				if methodType.NumIn() != 3 || // receiver + context + W[T]
+					!methodType.In(1).AssignableTo(reflect.TypeOf((*context.Context)(nil)).Elem()) ||
+					!methodType.In(2).AssignableTo(reflect.TypeOf((*W[T])(nil))) {
+					continue
+				}
+
+				t.Run(method.Name, func(ctx context.Context, t *W[T]) {
+					method.Func.Call([]reflect.Value{
+						containerValue,
+						reflect.ValueOf(ctx),
+						reflect.ValueOf(t),
+					})
 				})
-			})
+			}
 		}
 	})
 
