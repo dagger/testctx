@@ -6,6 +6,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/testctx"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -13,6 +14,8 @@ import (
 type LogConfig struct {
 	// LoggerProvider to use for logging. If nil, the global provider will be used.
 	LoggerProvider *sdklog.LoggerProvider
+	// Attributes to add to all test logs
+	Attributes []log.KeyValue
 }
 
 // WithLogging creates middleware that adds OpenTelemetry logging to each test/benchmark
@@ -32,7 +35,7 @@ func WithLogging[T testctx.Runner[T]](cfg ...LogConfig) testctx.Middleware[T] {
 
 			// Send logs to the span
 			next(ctx, w.WithLogger(&spanLogger{
-				streams: telemetry.SpanStdio(ctx, instrumentationLibrary),
+				streams: telemetry.SpanStdio(ctx, instrumentationLibrary, c.Attributes...),
 			}))
 		}
 	}
