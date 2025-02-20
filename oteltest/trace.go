@@ -11,19 +11,21 @@ import (
 )
 
 // TraceConfig holds configuration for the OpenTelemetry tracing middleware
-type TraceConfig struct {
+type TraceConfig[T testctx.Runner[T]] struct {
 	// TracerProvider to use for creating spans. If nil, the global provider will be used.
 	TracerProvider trace.TracerProvider
 	// Attributes to add to all test spans
 	Attributes []attribute.KeyValue
+	// StartOptions allows customizing the span start options for each test/benchmark
+	StartOptions func(*testctx.W[T]) []trace.SpanStartOption
 }
 
 // testSpanKey is the key used to store the test span in the context
 type testSpanKey struct{}
 
 // WithTracing creates middleware that adds OpenTelemetry tracing around each test/benchmark
-func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig) testctx.Middleware[T] {
-	var c TraceConfig
+func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[T] {
+	var c TraceConfig[T]
 	if len(cfg) > 0 {
 		c = cfg[0]
 	}
@@ -54,6 +56,10 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig) testctx.Middleware[T] 
 				opts = append(opts, trace.WithLinks(trace.Link{
 					SpanContext: val.SpanContext(),
 				}))
+			}
+
+			if c.StartOptions != nil {
+				opts = append(opts, c.StartOptions(w)...)
 			}
 
 			spanName := w.BaseName()

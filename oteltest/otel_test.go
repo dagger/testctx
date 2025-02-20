@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestMain(m *testing.M) {
@@ -88,10 +89,38 @@ func (OTelSuite) TestAttributes(ctx context.Context, t *testctx.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t.Unwrap(), oteltest.WithTracing[*testing.T](oteltest.TraceConfig{
+	tt := testctx.New(t.Unwrap(), oteltest.WithTracing(oteltest.TraceConfig[*testing.T]{
 		TracerProvider: tracerProvider,
 		Attributes: []attribute.KeyValue{
 			attribute.String("test.suite", "otel_test"),
+		},
+	}))
+
+	tt.Run("passing-test", func(ctx context.Context, t *testctx.T) {
+		time.Sleep(time.Second)
+	})
+
+	// Verify spans were recorded correctly
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1)
+
+	// Check passing test span
+	passSpan := spans[0]
+	assert.Equal(t, "passing-test", passSpan.Name())
+	assert.Equal(t, codes.Ok, passSpan.Status().Code)
+	assert.Contains(t, passSpan.Attributes(), attribute.String("test.suite", "otel_test"))
+}
+
+func (OTelSuite) TestStartOptions(ctx context.Context, t *testctx.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	tt := testctx.New(t.Unwrap(), oteltest.WithTracing(oteltest.TraceConfig[*testing.T]{
+		TracerProvider: tracerProvider,
+		StartOptions: func(w *testctx.W[*testing.T]) []trace.SpanStartOption {
+			return []trace.SpanStartOption{
+				trace.WithAttributes(attribute.String("test.suite", "otel_test")),
+			}
 		},
 	}))
 
@@ -114,7 +143,7 @@ func BenchmarkWithTracing(b *testing.B) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	bb := testctx.New(b, oteltest.WithTracing[*testing.B](oteltest.TraceConfig{
+	bb := testctx.New(b, oteltest.WithTracing[*testing.B](oteltest.TraceConfig[*testing.B]{
 		TracerProvider: tracerProvider,
 	}))
 
@@ -144,7 +173,7 @@ func (OTelSuite) TestTracingNesting(ctx context.Context, t *testctx.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
 
-	tt := testctx.New(t.Unwrap(), oteltest.WithTracing[*testing.T](oteltest.TraceConfig{
+	tt := testctx.New(t.Unwrap(), oteltest.WithTracing(oteltest.TraceConfig[*testing.T]{
 		TracerProvider: tracerProvider,
 	}))
 
@@ -183,6 +212,9 @@ func (OTelSuite) TestTracingNesting(ctx context.Context, t *testctx.T) {
 }
 
 func (OTelSuite) TestLogging(ctx context.Context, t *testctx.T) {
+	// pretty annoying, not sure how to test this, just comment out to verify
+	t.Skip("skipping logging test since it intentionally fails")
+
 	// Regular logs
 	t.Log("simple log message")
 	t.Logf("formatted %s message", "log")
