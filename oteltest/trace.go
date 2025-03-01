@@ -66,7 +66,10 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 
 			ctx, span := tracer.Start(ctx, spanName, opts...)
 			defer func() {
-				if w.Failed() {
+				if ctx.Err() != nil {
+					// Test was interrupted (timeout or cancellation)
+					span.SetStatus(codes.Error, "test interrupted: "+ctx.Err().Error())
+				} else if w.Failed() {
 					span.SetStatus(codes.Error, "test failed")
 				} else {
 					span.SetStatus(codes.Ok, "test passed")

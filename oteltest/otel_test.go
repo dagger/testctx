@@ -229,3 +229,36 @@ func (OTelSuite) TestLogging(ctx context.Context, t *testctx.T) {
 		t.Error("child error message")
 	})
 }
+
+func (OTelSuite) TestInterrupted(ctx context.Context, t *testctx.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	tt := testctx.New(t.Unwrap(),
+		testctx.WithTimeout[*testing.T](100*time.Millisecond), // Short timeout to force interruption
+		oteltest.WithTracing(oteltest.TraceConfig[*testing.T]{
+			TracerProvider: tracerProvider,
+		}),
+	)
+
+	// Run a test that will time out
+	tt.Run("timing-out-test", func(ctx context.Context, t *testctx.T) {
+		select {
+		case <-ctx.Done():
+			// Test should be interrupted by timeout
+			return
+		case <-time.After(1 * time.Second):
+			t.Fatal("test should have timed out")
+		}
+	})
+
+	// Verify spans were recorded correctly
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1)
+
+	// Check the interrupted test span
+	timeoutSpan := spans[0]
+	assert.Equal(t, "timing-out-test", timeoutSpan.Name())
+	assert.Equal(t, codes.Error, timeoutSpan.Status().Code)
+	assert.Equal(t, "test interrupted: context deadline exceeded", timeoutSpan.Status().Description)
+}
