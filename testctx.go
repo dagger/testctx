@@ -46,7 +46,7 @@ type W[T Runner[T]] struct {
 	tb         T
 	ctx        context.Context
 	middleware []Middleware[T]
-	logger     Logger
+	loggers    MultiLogger
 
 	// we have to embed testing.TB to become a testing.TB ourselves,
 	// since it has a private method
@@ -156,38 +156,38 @@ func (w *W[T]) Run(name string, fn RunFunc[T]) bool {
 // to be captured or redirected while still maintaining the original test behavior.
 func (w *W[T]) WithLogger(l Logger) *W[T] {
 	clone := w.clone()
-	clone.logger = l
+	clone.loggers = append(clone.loggers, l)
 	return clone
 }
 
 // Error calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Error(args ...any) {
 	w.tb.Error(args...)
-	if w.logger != nil {
-		w.logger.Error(args...)
+	if w.loggers != nil {
+		w.loggers.Error(args...)
 	}
 }
 
 // Errorf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Errorf(format string, args ...any) {
 	w.tb.Errorf(format, args...)
-	if w.logger != nil {
-		w.logger.Errorf(format, args...)
+	if w.loggers != nil {
+		w.loggers.Errorf(format, args...)
 	}
 }
 
 // Fatal calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Fatal(args ...any) {
-	if w.logger != nil {
-		w.logger.Error(args...)
+	if w.loggers != nil {
+		w.loggers.Error(args...)
 	}
 	w.tb.Fatal(args...)
 }
 
 // Fatalf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Fatalf(format string, args ...any) {
-	if w.logger != nil {
-		w.logger.Errorf(format, args...)
+	if w.loggers != nil {
+		w.loggers.Errorf(format, args...)
 	}
 	w.tb.Fatalf(format, args...)
 }
@@ -195,31 +195,31 @@ func (w *W[T]) Fatalf(format string, args ...any) {
 // Log calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Log(args ...any) {
 	w.tb.Log(args...)
-	if w.logger != nil {
-		w.logger.Log(args...)
+	if w.loggers != nil {
+		w.loggers.Log(args...)
 	}
 }
 
 // Logf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Logf(format string, args ...any) {
 	w.tb.Logf(format, args...)
-	if w.logger != nil {
-		w.logger.Logf(format, args...)
+	if w.loggers != nil {
+		w.loggers.Logf(format, args...)
 	}
 }
 
 // Skip calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Skip(args ...any) {
-	if w.logger != nil {
-		w.logger.Log(args...)
+	if w.loggers != nil {
+		w.loggers.Log(args...)
 	}
 	w.tb.Skip(args...)
 }
 
 // Skipf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Skipf(format string, args ...any) {
-	if w.logger != nil {
-		w.logger.Logf(format, args...)
+	if w.loggers != nil {
+		w.loggers.Logf(format, args...)
 	}
 	w.tb.Skipf(format, args...)
 }
@@ -241,7 +241,7 @@ func (w *W[T]) runMethods(containers []any, prefix string) {
 			containerType := reflect.TypeOf(container)
 			containerValue := reflect.ValueOf(container)
 
-			for i := 0; i < containerType.NumMethod(); i++ {
+			for i := range containerType.NumMethod() {
 				method := containerType.Method(i)
 				if !strings.HasPrefix(method.Name, prefix) {
 					continue
@@ -275,7 +275,7 @@ func (w *W[T]) clone() *W[T] {
 		tb:         w.tb,
 		ctx:        w.ctx,
 		middleware: w.middleware,
-		logger:     w.logger,
+		loggers:    w.loggers,
 	}
 }
 
@@ -302,4 +302,37 @@ func (w *W[T]) wrapWithMiddleware(fn RunFunc[T]) RunFunc[T] {
 	}
 
 	return wrapped
+}
+
+// MultiLogger multiplexes to a set of loggers.
+type MultiLogger []Logger
+
+var _ Logger = MultiLogger{}
+
+// Log forwards the log call to all loggers
+func (ml MultiLogger) Log(args ...any) {
+	for _, logger := range ml {
+		logger.Log(args...)
+	}
+}
+
+// Logf forwards the formatted log call to all loggers
+func (ml MultiLogger) Logf(format string, args ...any) {
+	for _, logger := range ml {
+		logger.Logf(format, args...)
+	}
+}
+
+// Error forwards the error call to all loggers
+func (ml MultiLogger) Error(args ...any) {
+	for _, logger := range ml {
+		logger.Error(args...)
+	}
+}
+
+// Errorf forwards the formatted error call to all loggers
+func (ml MultiLogger) Errorf(format string, args ...any) {
+	for _, logger := range ml {
+		logger.Errorf(format, args...)
+	}
 }
