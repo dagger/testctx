@@ -162,6 +162,7 @@ func (w *W[T]) WithLogger(l Logger) *W[T] {
 
 // Error calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Error(args ...any) {
+	w.tb.Helper()
 	w.tb.Error(args...)
 	if w.loggers != nil {
 		w.loggers.Error(args...)
@@ -170,6 +171,7 @@ func (w *W[T]) Error(args ...any) {
 
 // Errorf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Errorf(format string, args ...any) {
+	w.tb.Helper()
 	w.tb.Errorf(format, args...)
 	if w.loggers != nil {
 		w.loggers.Errorf(format, args...)
@@ -178,6 +180,7 @@ func (w *W[T]) Errorf(format string, args ...any) {
 
 // Fatal calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Fatal(args ...any) {
+	w.tb.Helper()
 	if w.loggers != nil {
 		w.loggers.Error(args...)
 	}
@@ -186,6 +189,7 @@ func (w *W[T]) Fatal(args ...any) {
 
 // Fatalf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Fatalf(format string, args ...any) {
+	w.tb.Helper()
 	if w.loggers != nil {
 		w.loggers.Errorf(format, args...)
 	}
@@ -194,6 +198,7 @@ func (w *W[T]) Fatalf(format string, args ...any) {
 
 // Log calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Log(args ...any) {
+	w.tb.Helper()
 	w.tb.Log(args...)
 	if w.loggers != nil {
 		w.loggers.Log(args...)
@@ -202,6 +207,7 @@ func (w *W[T]) Log(args ...any) {
 
 // Logf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Logf(format string, args ...any) {
+	w.tb.Helper()
 	w.tb.Logf(format, args...)
 	if w.loggers != nil {
 		w.loggers.Logf(format, args...)
@@ -210,6 +216,7 @@ func (w *W[T]) Logf(format string, args ...any) {
 
 // Skip calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Skip(args ...any) {
+	w.tb.Helper()
 	if w.loggers != nil {
 		w.loggers.Log(args...)
 	}
@@ -218,6 +225,7 @@ func (w *W[T]) Skip(args ...any) {
 
 // Skipf calls through to the underlying test/benchmark type and logs if a logger is set
 func (w *W[T]) Skipf(format string, args ...any) {
+	w.tb.Helper()
 	if w.loggers != nil {
 		w.loggers.Logf(format, args...)
 	}
