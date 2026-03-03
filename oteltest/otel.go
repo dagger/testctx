@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger/telemetry"
+	"github.com/dagger/otel-go"
 )
 
 const instrumentationLibrary = "dagger.io/testctx"
@@ -22,8 +22,8 @@ var propagatedCtx = context.Background()
 // It also initializes a context that will be used to propagate trace
 // context to subtests.
 func Main(m *testing.M) int {
-	propagatedCtx = telemetry.InitEmbedded(context.Background(), nil)
+	propagatedCtx = otel.InitEmbedded(context.Background(), nil)
 	exitCode := m.Run()
-	telemetry.Close()
+	otel.Close()
 	return exitCode
 }

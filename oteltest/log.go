@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger/telemetry"
+	"github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -25,24 +25,24 @@ func WithLogging[T testctx.Runner[T]](cfg ...LogConfig) testctx.Middleware[T] {
 		c = cfg[0]
 	}
 	if c.LoggerProvider == nil {
-		c.LoggerProvider = telemetry.LoggerProvider(propagatedCtx)
+		c.LoggerProvider = otel.LoggerProvider(propagatedCtx)
 	}
 
 	return func(next testctx.RunFunc[T]) testctx.RunFunc[T] {
 		return func(ctx context.Context, w *testctx.W[T]) {
 			// Use the same logger provider as the main test
-			ctx = telemetry.WithLoggerProvider(ctx, c.LoggerProvider)
+			ctx = otel.WithLoggerProvider(ctx, c.LoggerProvider)
 
 			// Send logs to the span
 			next(ctx, w.WithLogger(&spanLogger{
-				streams: telemetry.SpanStdio(ctx, instrumentationLibrary, c.Attributes...),
+				streams: otel.SpanStdio(ctx, instrumentationLibrary, c.Attributes...),
 			}))
 		}
 	}
 }
 
 type spanLogger struct {
-	streams telemetry.SpanStreams
+	streams otel.SpanStreams
 }
 
 func (l *spanLogger) Log(args ...any) {
