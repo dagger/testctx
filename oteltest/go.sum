@@ -2,8 +2,8 @@ github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1x
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/dagger/otel-go v1.41.0 h1:GQAJtTM1Ja9Dt/JSSqqjCFVlCye09Ymx4dWUDRqcgKw=
-github.com/dagger/otel-go v1.41.0/go.mod h1:RP74B3xmOq2MWL1lBsAWD9uvTryDhZ+m1dDzJj9QJEI=
+github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887 h1:M+yTYQkNo0ZC0A6+CS9vEXtYDhsr4xmSu5RfQaMVEfE=
+github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887/go.mod h1:RP74B3xmOq2MWL1lBsAWD9uvTryDhZ+m1dDzJj9QJEI=
 github.com/dagger/testctx v0.0.5 h1:XnWo/DSoubQbmCg8eTyHZGZhTWPppN7r4drfDNheAjc=
 github.com/dagger/testctx v0.0.5/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

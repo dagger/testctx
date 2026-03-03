@@ -3,7 +3,7 @@ module github.com/dagger/testctx/oteltest
 go 1.25.0
 
 require (
-	github.com/dagger/otel-go v1.41.0
+	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/dagger/testctx v0.0.5
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.41.0
