@@ -6,6 +6,7 @@ package testctx
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -274,8 +275,8 @@ func (w *W[T]) clone() *W[T] {
 		TB:         w.TB,
 		tb:         w.tb,
 		ctx:        w.ctx,
-		middleware: w.middleware,
-		loggers:    w.loggers,
+		middleware: slices.Clone(w.middleware),
+		loggers:    slices.Clone(w.loggers),
 	}
 }
 
