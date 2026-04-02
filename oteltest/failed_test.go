@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/dagger/testctx"
 	"github.com/dagger/testctx/oteltest"
@@ -19,9 +20,11 @@ import (
 
 // spanResult holds serialized span data for cross-process verification.
 type spanResult struct {
-	Name       string `json:"name"`
-	StatusCode int    `json:"status_code"`
-	StatusDesc string `json:"status_desc"`
+	Name       string    `json:"name"`
+	StatusCode int       `json:"status_code"`
+	StatusDesc string    `json:"status_desc"`
+	StartTime  time.Time `json:"start_time"`
+	EndTime    time.Time `json:"end_time"`
 }
 
 // TestSubprocess is a helper that only runs when invoked as a subprocess.
@@ -49,6 +52,8 @@ func TestSubprocess(t *testing.T) {
 				Name:       s.Name(),
 				StatusCode: int(s.Status().Code),
 				StatusDesc: s.Status().Description,
+				StartTime:  s.StartTime(),
+				EndTime:    s.EndTime(),
 			})
 		}
 		data, _ := json.Marshal(results)
@@ -88,9 +93,11 @@ func TestSubprocess(t *testing.T) {
 	tt.Run("ParallelChildFails", func(ctx context.Context, t *testctx.T) {
 		t.Run("passing", func(ctx context.Context, t *testctx.T) {
 			t.Unwrap().Parallel()
+			time.Sleep(200 * time.Millisecond)
 		})
 		t.Run("failing", func(ctx context.Context, t *testctx.T) {
 			t.Unwrap().Parallel()
+			time.Sleep(200 * time.Millisecond)
 			t.Error("child failed")
 		})
 	})
@@ -178,6 +185,12 @@ func TestFailedTestErrorMessages(t *testing.T) {
 				assert.Equal(t, int(codes.Error), parent.StatusCode,
 					"parent span should be marked as failed")
 				assert.Equal(t, "child failed", parent.StatusDesc)
+				// The parent span duration should reflect only the sync
+				// setup phase, not the parallel child execution time.
+				// Children sleep 200ms; parent should be well under that.
+				parentDur := parent.EndTime.Sub(parent.StartTime)
+				assert.Less(t, parentDur, 100*time.Millisecond,
+					"parent span duration should not include parallel child time")
 				// The failing child should have the error message
 				failing := byName["failing"]
 				assert.Equal(t, int(codes.Error), failing.StatusCode)

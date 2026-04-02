@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dagger/testctx"
 	"go.opentelemetry.io/otel"
@@ -82,17 +83,28 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 
 			ctx, span := tracer.Start(ctx, spanName, opts...)
 
-			// Use Cleanup instead of defer so that the span ends after all
-			// subtests complete. With defer, parallel subtests haven't
-			// finished yet when next() returns, so w.Failed() would be
-			// wrong and the span duration wouldn't cover child spans.
-			// Cleanup is guaranteed to run after all subtests finish.
+			// Snapshot the sync-phase end time and context error in a
+			// defer. This fires when the test function returns — before
+			// Go waits for parallel subtests and before WithTimeout's
+			// defer cancel() unwinds. Capturing ctx.Err() here avoids
+			// confusing WithTimeout's cancel with a real interruption.
+			var syncEnd time.Time
+			var ctxErr error
+			defer func() {
+				syncEnd = time.Now()
+				ctxErr = ctx.Err()
+			}()
+
+			// Use Cleanup to set the final status after all subtests
+			// (including parallel ones) complete. End the span at the
+			// sync-phase timestamp so its duration reflects the test's
+			// own work, not time spent waiting for parallel children.
 			w.Cleanup(func() {
 				var testStatus attribute.KeyValue
-				if ctx.Err() != nil {
+				if ctxErr != nil {
 					// Test was interrupted (timeout or cancellation)
-					span.SetStatus(codes.Error, "test interrupted: "+ctx.Err().Error())
-					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					span.SetStatus(codes.Error, "test interrupted: "+ctxErr.Error())
+					if errors.Is(ctxErr, context.DeadlineExceeded) {
 						testStatus = semconv.TestSuiteRunStatusTimedOut
 					} else {
 						testStatus = semconv.TestSuiteRunStatusAborted
@@ -112,7 +124,7 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 					testStatus = semconv.TestCaseResultStatusPass
 				}
 				span.SetAttributes(testStatus)
-				span.End()
+				span.End(trace.WithTimestamp(syncEnd))
 			})
 
 			// Store the span in the context so that it can be linked to in subtests
