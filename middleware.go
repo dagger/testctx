@@ -11,7 +11,7 @@ func WithTimeout[T Runner[T]](d time.Duration) Middleware[T] {
 	return func(next RunFunc[T]) RunFunc[T] {
 		return func(ctx context.Context, t *W[T]) {
 			ctx, cancel := context.WithTimeout(ctx, d)
-			defer cancel()
+			t.Cleanup(cancel)
 			next(ctx, t)
 		}
 	}
