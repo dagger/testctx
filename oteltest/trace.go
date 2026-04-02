@@ -2,6 +2,9 @@ package oteltest
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/dagger/testctx"
 	"go.opentelemetry.io/otel"
@@ -64,13 +67,21 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 
 			spanName := w.BaseName()
 
+			// Accumulate Error/Fatal messages so the span status carries the
+			// actual failure reason instead of a generic "test failed".
+			errors := &errorAccumulator{}
+
 			ctx, span := tracer.Start(ctx, spanName, opts...)
 			defer func() {
 				if ctx.Err() != nil {
 					// Test was interrupted (timeout or cancellation)
 					span.SetStatus(codes.Error, "test interrupted: "+ctx.Err().Error())
 				} else if w.Failed() {
-					span.SetStatus(codes.Error, "test failed")
+					desc := errors.String()
+					if desc == "" {
+						desc = "test failed"
+					}
+					span.SetStatus(codes.Error, desc)
 				} else {
 					span.SetStatus(codes.Ok, "test passed")
 				}
@@ -80,7 +91,38 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 			// Store the span in the context so that it can be linked to in subtests
 			ctx = context.WithValue(ctx, testSpanKey{}, span)
 
-			next(ctx, w)
+			next(ctx, w.WithLogger(errors))
 		}
 	}
+}
+
+// errorAccumulator is a Logger that captures Error/Errorf messages so they
+// can be attached to a span status when the test fails.
+type errorAccumulator struct {
+	mu       sync.Mutex
+	messages []string
+}
+
+var _ testctx.Logger = (*errorAccumulator)(nil)
+
+func (a *errorAccumulator) Log(args ...any)                 {}
+func (a *errorAccumulator) Logf(format string, args ...any) {}
+
+func (a *errorAccumulator) Error(args ...any) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.messages = append(a.messages, fmt.Sprint(args...))
+}
+
+func (a *errorAccumulator) Errorf(format string, args ...any) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.messages = append(a.messages, fmt.Sprintf(format, args...))
+}
+
+// String returns all accumulated error messages joined by newlines.
+func (a *errorAccumulator) String() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return strings.Join(a.messages, "\n")
 }
