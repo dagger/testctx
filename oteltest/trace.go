@@ -111,13 +111,13 @@ func (a *errorAccumulator) Logf(format string, args ...any) {}
 func (a *errorAccumulator) Error(args ...any) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.messages = append(a.messages, fmt.Sprint(args...))
+	a.messages = append(a.messages, cleanErrorMessage(fmt.Sprint(args...)))
 }
 
 func (a *errorAccumulator) Errorf(format string, args ...any) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.messages = append(a.messages, fmt.Sprintf(format, args...))
+	a.messages = append(a.messages, cleanErrorMessage(fmt.Sprintf(format, args...)))
 }
 
 // String returns all accumulated error messages joined by newlines.
@@ -125,4 +125,62 @@ func (a *errorAccumulator) String() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return strings.Join(a.messages, "\n")
+}
+
+// cleanErrorMessage extracts the meaningful error content from verbose test
+// failure messages like those produced by testify's assert/require packages.
+// It strips the "Error Trace:" and "Test:" sections, keeping only "Error:"
+// and "Messages:" content. If the message doesn't match the expected format,
+// it is returned unchanged (with leading/trailing whitespace trimmed).
+func cleanErrorMessage(msg string) string {
+	// Quick check: does this look like a testify-formatted message?
+	if !strings.Contains(msg, "\tError:") {
+		return strings.TrimSpace(msg)
+	}
+
+	lines := strings.Split(msg, "\n")
+	var result []string
+	inWanted := false
+	found := false
+
+	for _, line := range lines {
+		// Section headers look like: \t<Name>:<padding>\t<value>
+		// They start with \t followed by a non-whitespace character.
+		if len(line) > 1 && line[0] == '\t' && line[1] != ' ' && line[1] != '\t' {
+			inWanted = false
+			rest := line[1:]
+			colonIdx := strings.Index(rest, ":")
+			if colonIdx < 0 {
+				continue
+			}
+			name := rest[:colonIdx]
+			after := strings.TrimLeft(rest[colonIdx+1:], " ")
+			if len(after) == 0 || after[0] != '\t' {
+				continue
+			}
+			if name == "Error" || name == "Messages" {
+				inWanted = true
+				found = true
+				if v := strings.TrimSpace(after[1:]); v != "" {
+					result = append(result, v)
+				}
+			}
+			continue
+		}
+
+		// Continuation lines look like: \t<spaces>\t<value>
+		if inWanted && len(line) > 0 && line[0] == '\t' {
+			rest := strings.TrimLeft(line[1:], " ")
+			if len(rest) > 0 && rest[0] == '\t' {
+				if v := strings.TrimSpace(rest[1:]); v != "" {
+					result = append(result, v)
+				}
+			}
+		}
+	}
+
+	if found && len(result) > 0 {
+		return strings.Join(result, "\n")
+	}
+	return strings.TrimSpace(msg)
 }

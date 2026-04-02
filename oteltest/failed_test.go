@@ -3,6 +3,7 @@ package oteltest_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -79,6 +80,10 @@ func TestSubprocess(t *testing.T) {
 	tt.Run("FailNoMessage", func(ctx context.Context, t *testctx.T) {
 		t.Fail()
 	})
+
+	tt.Run("TestifyRequireNoError", func(ctx context.Context, t *testctx.T) {
+		require.NoError(t, fmt.Errorf("something failed"))
+	})
 }
 
 // runSubprocess invokes the test binary as a subprocess, selecting a specific
@@ -141,6 +146,11 @@ func TestFailedTestErrorMessages(t *testing.T) {
 			name:     "Fail with no message falls back to test failed",
 			subtest:  "FailNoMessage",
 			wantDesc: "test failed",
+		},
+		{
+			name:     "testify verbose error is cleaned",
+			subtest:  "TestifyRequireNoError",
+			wantDesc: "Received unexpected error:\nsomething failed",
 		},
 	}
 
