@@ -2,6 +2,7 @@ package oteltest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -49,7 +51,14 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 			}
 
 			// Start a new span for this test/benchmark
+			attrs := []attribute.KeyValue{
+				semconv.TestCaseName(w.Name()),
+			}
+			if testPackage != "" {
+				attrs = append(attrs, semconv.TestSuiteName(testPackage))
+			}
 			opts := []trace.SpanStartOption{
+				trace.WithAttributes(attrs...),
 				trace.WithAttributes(c.Attributes...),
 			}
 
@@ -69,29 +78,41 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 
 			// Accumulate Error/Fatal messages so the span status carries the
 			// actual failure reason instead of a generic "test failed".
-			errors := &errorAccumulator{}
+			errorsAcc := &errorAccumulator{}
 
 			ctx, span := tracer.Start(ctx, spanName, opts...)
 			defer func() {
+				var testStatus attribute.KeyValue
 				if ctx.Err() != nil {
 					// Test was interrupted (timeout or cancellation)
 					span.SetStatus(codes.Error, "test interrupted: "+ctx.Err().Error())
+					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+						testStatus = semconv.TestSuiteRunStatusTimedOut
+					} else {
+						testStatus = semconv.TestSuiteRunStatusAborted
+					}
 				} else if w.Failed() {
-					desc := errors.String()
+					desc := errorsAcc.String()
 					if desc == "" {
 						desc = "test failed"
 					}
 					span.SetStatus(codes.Error, desc)
+					testStatus = semconv.TestSuiteRunStatusFailure
+				} else if w.Skipped() {
+					span.SetStatus(codes.Ok, "test skipped")
+					testStatus = semconv.TestSuiteRunStatusSkipped
 				} else {
 					span.SetStatus(codes.Ok, "test passed")
+					testStatus = semconv.TestSuiteRunStatusSuccess
 				}
+				span.SetAttributes(testStatus)
 				span.End()
 			}()
 
 			// Store the span in the context so that it can be linked to in subtests
 			ctx = context.WithValue(ctx, testSpanKey{}, span)
 
-			next(ctx, w.WithLogger(errors))
+			next(ctx, w.WithLogger(errorsAcc))
 		}
 	}
 }

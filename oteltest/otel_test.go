@@ -85,6 +85,22 @@ func (OTelSuite) TestParallelAttribution(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (OTelSuite) TestAutoSuiteName(ctx context.Context, t *testctx.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	tt := testctx.New(t.Unwrap(), oteltest.WithTracing(oteltest.TraceConfig[*testing.T]{
+		TracerProvider: tracerProvider,
+	}))
+
+	tt.Run("check-suite-name", func(ctx context.Context, t *testctx.T) {})
+
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1)
+	assert.Contains(t, spans[0].Attributes(),
+		attribute.String("test.suite.name", "github.com/dagger/testctx/oteltest"))
+}
+
 func (OTelSuite) TestAttributes(ctx context.Context, t *testctx.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
