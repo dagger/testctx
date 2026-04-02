@@ -81,7 +81,13 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 			errorsAcc := &errorAccumulator{}
 
 			ctx, span := tracer.Start(ctx, spanName, opts...)
-			defer func() {
+
+			// Use Cleanup instead of defer so that the span ends after all
+			// subtests complete. With defer, parallel subtests haven't
+			// finished yet when next() returns, so w.Failed() would be
+			// wrong and the span duration wouldn't cover child spans.
+			// Cleanup is guaranteed to run after all subtests finish.
+			w.Cleanup(func() {
 				var testStatus attribute.KeyValue
 				if ctx.Err() != nil {
 					// Test was interrupted (timeout or cancellation)
@@ -103,11 +109,11 @@ func WithTracing[T testctx.Runner[T]](cfg ...TraceConfig[T]) testctx.Middleware[
 					testStatus = semconv.TestSuiteRunStatusSkipped
 				} else {
 					span.SetStatus(codes.Ok, "test passed")
-					testStatus = semconv.TestSuiteRunStatusSuccess
+					testStatus = semconv.TestCaseResultStatusPass
 				}
 				span.SetAttributes(testStatus)
 				span.End()
-			}()
+			})
 
 			// Store the span in the context so that it can be linked to in subtests
 			ctx = context.WithValue(ctx, testSpanKey{}, span)

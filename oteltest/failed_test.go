@@ -84,6 +84,16 @@ func TestSubprocess(t *testing.T) {
 	tt.Run("TestifyRequireNoError", func(ctx context.Context, t *testctx.T) {
 		require.NoError(t, fmt.Errorf("something failed"))
 	})
+
+	tt.Run("ParallelChildFails", func(ctx context.Context, t *testctx.T) {
+		t.Run("passing", func(ctx context.Context, t *testctx.T) {
+			t.Unwrap().Parallel()
+		})
+		t.Run("failing", func(ctx context.Context, t *testctx.T) {
+			t.Unwrap().Parallel()
+			t.Error("child failed")
+		})
+	})
 }
 
 // runSubprocess invokes the test binary as a subprocess, selecting a specific
@@ -115,7 +125,8 @@ func TestFailedTestErrorMessages(t *testing.T) {
 	tests := []struct {
 		name     string
 		subtest  string
-		wantDesc string
+		wantDesc string // exact match (when set)
+		check    func(t *testing.T, spans []spanResult)
 	}{
 		{
 			name:     "single Error populates span status",
@@ -152,15 +163,43 @@ func TestFailedTestErrorMessages(t *testing.T) {
 			subtest:  "TestifyRequireNoError",
 			wantDesc: "Received unexpected error:\nsomething failed",
 		},
+		{
+			name:    "parallel child failure reflects on parent",
+			subtest: "ParallelChildFails",
+			check: func(t *testing.T, spans []spanResult) {
+				// Expect 3 spans: passing, failing, and the parent
+				require.Len(t, spans, 3)
+				byName := map[string]spanResult{}
+				for _, s := range spans {
+					byName[s.Name] = s
+				}
+				// The parent span must reflect the child failure
+				parent := byName["ParallelChildFails"]
+				assert.Equal(t, int(codes.Error), parent.StatusCode,
+					"parent span should be marked as failed")
+				assert.Equal(t, "child failed", parent.StatusDesc)
+				// The failing child should have the error message
+				failing := byName["failing"]
+				assert.Equal(t, int(codes.Error), failing.StatusCode)
+				assert.Equal(t, "child failed", failing.StatusDesc)
+				// The passing child should be OK
+				passing := byName["passing"]
+				assert.Equal(t, int(codes.Ok), passing.StatusCode)
+			},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			spans := runSubprocess(t, tc.subtest)
-			require.Len(t, spans, 1)
-			assert.Equal(t, int(codes.Error), spans[0].StatusCode)
-			assert.Equal(t, tc.wantDesc, spans[0].StatusDesc)
+			if tc.check != nil {
+				tc.check(t, spans)
+			} else {
+				require.Len(t, spans, 1)
+				assert.Equal(t, int(codes.Error), spans[0].StatusCode)
+				assert.Equal(t, tc.wantDesc, spans[0].StatusDesc)
+			}
 		})
 	}
 }
