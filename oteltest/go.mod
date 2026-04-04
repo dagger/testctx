@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
-	github.com/dagger/testctx v0.0.5
+	github.com/dagger/testctx v0.1.2
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.41.0
 	go.opentelemetry.io/otel/log v0.17.0
