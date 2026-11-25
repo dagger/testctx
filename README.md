@@ -36,51 +36,28 @@ func BenchAll(t *testing.T) {
 }
 ```
 
-The `oteltest` package provides middleware for transparent tracing:
+## OpenTelemetry
 
-```go
-package oteltest_test
+The `oteltest` module (`github.com/dagger/testctx/oteltest`) has moved to
+[`github.com/dagger/otel-go/oteltestctx`](https://github.com/dagger/otel-go/tree/main/oteltestctx).
+Existing `oteltest/v*` tags remain available, so current users keep building,
+but the module receives no further updates here.
 
-import (
-	"context"
-	"os"
-	"testing"
-	"time"
+To migrate:
 
-	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/oteltest"
-)
-
-func TestMain(m *testing.M) {
-	os.Exit(oteltest.Main(m)) // auto-wires OTel exporters
-}
-
-func TestFruits(t *testing.T) {
-	testctx.New(t,
-		testctx.WithParallel(), // run tests in parallel
-		oteltest.WithTracing[*testing.T](), // trace each test and subtest
-		oteltest.WithLogging[*testing.T](), // direct t.Log etc. to span logs
-	).RunTests(&FruitSuite{})
-}
-
-type FruitSuite struct{}
-
-func (FruitSuite) TestApple(ctx context.Context, t *testctx.T) {
-    // ...
-}
-
-func (FruitSuite) TestBanana(ctx context.Context, t *testctx.T) {
-    // ...
-}
-
-// Creates the following span tree:
-//
-//	TestFruits
-//	├── TestApple
-//	└── TestBanana
-//
-// All test logs are additionally sent to OpenTelemetry if configured.
-```
+- Import `github.com/dagger/otel-go/oteltestctx` instead of
+  `github.com/dagger/testctx/oteltest`. `Main`, `WithTracing` and
+  `TraceConfig` keep the same signatures.
+- Drop `WithLogging` and `LogConfig`: they were removed. Run tests with
+  `otelgotest` (`github.com/dagger/otel-go/cmd/otelgotest`, built on
+  `gotest.Run`), which sends each test's output to its span as logs.
+- Under `otelgotest`, `WithTracing` adopts the span that `otelgotest` creates
+  for each test (via `OTEL_TEST_SOCKET`) instead of starting its own, unless a
+  custom `TracerProvider` is set. `TraceConfig.Attributes`, `StartOptions`,
+  parent-span links and failure messages in the span status apply only when
+  `WithTracing` starts its own span.
+- Test spans carry `test.suite.name` even without `Main`, since the package
+  under test is now detected at init.
 
 ## Middleware
 
